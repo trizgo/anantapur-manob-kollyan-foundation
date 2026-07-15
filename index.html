@@ -130,21 +130,32 @@
                         </select>
                     </div>
 
-                    <!-- Payment Method -->
+                    <!-- Payment Method (এখন এডমিন প্যানেল থেকে ডাইনামিক ভাবে লোড হয়) -->
                     <div>
                         <label class="block text-lg font-semibold text-gray-800 mb-2">পেমেন্ট মাধ্যম নির্বাচন করুন</label>
                         <select id="methodSelect" required class="w-full border border-gray-300 rounded-lg p-3 text-lg focus:ring-green-500 focus:border-green-500 bg-gray-50">
                             <option value="" disabled selected>নির্বাচন করুন</option>
-                            <option value="bkash">বিকাশ (Bkash)</option>
-                            <option value="nagad">নগদ (Nagad)</option>
                         </select>
                     </div>
 
-                    <!-- Number Display with Instructions -->
-                    <div class="bg-green-50 p-6 rounded-lg border border-green-200 text-center transition-all shadow-sm">
+                    <!-- Mobile Banking Number Display -->
+                    <div id="mobileBankingDisplay" class="bg-green-50 p-6 rounded-lg border border-green-200 text-center transition-all shadow-sm hidden">
                         <p class="text-base text-gray-700 font-medium">নিচের নাম্বারে টাকা পাঠান:</p>
-                        <p id="displayNumber" class="text-2xl md:text-3xl font-bold text-green-800 tracking-wider font-mono mt-2">মাধ্যম নির্বাচন করুন</p>
+                        <p id="displayNumber" class="text-2xl md:text-3xl font-bold text-green-800 tracking-wider font-mono mt-2"></p>
                         <p id="displayInstruction" class="text-lg font-bold text-red-600 mt-2 animate-pulse hidden"></p>
+                    </div>
+
+                    <!-- Bank Details Display -->
+                    <div id="bankDisplay" class="bg-green-50 p-6 rounded-lg border border-green-200 text-left transition-all shadow-sm hidden space-y-2">
+                        <p class="text-base text-gray-700"><span class="font-semibold">ব্যাংকের নাম:</span> <span id="bankNameDisplay" class="font-bold text-green-800"></span></p>
+                        <p class="text-base text-gray-700"><span class="font-semibold">অ্যাকাউন্টের নাম:</span> <span id="bankAccNameDisplay" class="font-bold text-green-800"></span></p>
+                        <p class="text-base text-gray-700"><span class="font-semibold">অ্যাকাউন্ট নাম্বার:</span> <span id="bankAccNumberDisplay" class="font-bold text-green-800 font-mono"></span></p>
+                        <p class="text-base text-gray-700"><span class="font-semibold">শাখা:</span> <span id="bankBranchDisplay" class="font-bold text-green-800"></span></p>
+                    </div>
+
+                    <!-- Placeholder when nothing selected -->
+                    <div id="paymentPlaceholder" class="bg-green-50 p-6 rounded-lg border border-green-200 text-center transition-all shadow-sm">
+                        <p class="text-lg font-bold text-green-800">আগে মাধ্যম নির্বাচন করুন</p>
                     </div>
 
                     <!-- 2. Amount Input -->
@@ -510,37 +521,82 @@
         document.getElementById('prevBtn').onclick = () => { prevBanner(); };
 
 
-        // --- PAYMENT LOGIC ---
-        let paymentData = { bkash: "Loading...", nagad: "Loading...", bkashText: "", nagadText: "" };
-        const settingsRef = doc(db, "settings", "paymentInfo");
-        
-        onSnapshot(settingsRef, (doc) => { 
-            if (doc.exists()) {
-                paymentData = doc.data(); 
-                const currentMethod = methodSelect.value;
-                if(currentMethod) updatePaymentDisplay(currentMethod);
-            }
-        });
-
+        // --- PAYMENT METHODS LOGIC (ডাইনামিক - এডমিন প্যানেল থেকে) ---
+        // Firestore কালেকশন: "paymentMethods"
+        // মোবাইল ব্যাংকিং ডকুমেন্ট: { category: "mobile", title: "বিকাশ", number: "017xxxxxxxx", instruction: "সেন্ড মানি", timestamp }
+        // ব্যাংক ডকুমেন্ট:          { category: "bank", bankName: "...", accountName: "...", accountNumber: "...", branchName: "...", timestamp }
         const methodSelect = document.getElementById('methodSelect');
+        const mobileBankingDisplay = document.getElementById('mobileBankingDisplay');
+        const bankDisplay = document.getElementById('bankDisplay');
+        const paymentPlaceholder = document.getElementById('paymentPlaceholder');
         const displayNumber = document.getElementById('displayNumber');
         const displayInstruction = document.getElementById('displayInstruction');
+        const bankNameDisplay = document.getElementById('bankNameDisplay');
+        const bankAccNameDisplay = document.getElementById('bankAccNameDisplay');
+        const bankAccNumberDisplay = document.getElementById('bankAccNumberDisplay');
+        const bankBranchDisplay = document.getElementById('bankBranchDisplay');
 
-        function updatePaymentDisplay(val) {
-            if (val && paymentData[val]) {
-                displayNumber.innerText = paymentData[val];
-                const text = paymentData[val + 'Text']; 
-                if(text) {
-                    displayInstruction.innerText = `(${text})`;
+        let paymentMethods = {}; // doc.id => data
+
+        function updatePaymentDisplay(selectedId) {
+            const data = paymentMethods[selectedId];
+
+            mobileBankingDisplay.classList.add('hidden');
+            bankDisplay.classList.add('hidden');
+            paymentPlaceholder.classList.add('hidden');
+
+            if (!data) {
+                paymentPlaceholder.classList.remove('hidden');
+                return;
+            }
+
+            if (data.category === 'bank') {
+                bankNameDisplay.innerText = data.bankName || '';
+                bankAccNameDisplay.innerText = data.accountName || '';
+                bankAccNumberDisplay.innerText = data.accountNumber || '';
+                bankBranchDisplay.innerText = data.branchName || '';
+                bankDisplay.classList.remove('hidden');
+            } else {
+                displayNumber.innerText = data.number || '';
+                if (data.instruction) {
+                    displayInstruction.innerText = `(${data.instruction})`;
                     displayInstruction.classList.remove('hidden');
                 } else {
                     displayInstruction.classList.add('hidden');
                 }
-            } else {
-                displayNumber.innerText = "আগে মাধ্যম নির্বাচন করুন";
-                displayInstruction.classList.add('hidden');
+                mobileBankingDisplay.classList.remove('hidden');
             }
         }
+
+        const qPaymentMethods = query(collection(db, "paymentMethods"), orderBy("timestamp", "desc"));
+
+        onSnapshot(qPaymentMethods, (snapshot) => {
+            paymentMethods = {};
+            const previousSelection = methodSelect.value;
+            methodSelect.innerHTML = `<option value="" disabled ${!previousSelection ? 'selected' : ''}>নির্বাচন করুন</option>`;
+
+            if (!snapshot.empty) {
+                snapshot.forEach((docSnap) => {
+                    const data = docSnap.data();
+                    paymentMethods[docSnap.id] = data;
+
+                    const option = document.createElement('option');
+                    option.value = docSnap.id;
+                    option.textContent = data.category === 'bank'
+                        ? `ব্যাংক - ${data.bankName || ''}`
+                        : (data.title || 'মোবাইল ব্যাংকিং');
+                    methodSelect.appendChild(option);
+                });
+            }
+
+            // আগে থেকে সিলেক্ট করা থাকলে সেটা এখনো তালিকায় আছে কিনা যাচাই করে ডিসপ্লে রিফ্রেশ
+            if (previousSelection && paymentMethods[previousSelection]) {
+                methodSelect.value = previousSelection;
+                updatePaymentDisplay(previousSelection);
+            } else {
+                updatePaymentDisplay(null);
+            }
+        });
 
         methodSelect.addEventListener('change', () => {
             updatePaymentDisplay(methodSelect.value);
@@ -551,22 +607,26 @@
             e.preventDefault();
             const btn = e.target.querySelector('button');
             const fund = document.getElementById('fundSelect').value;
-            const method = methodSelect.value;
+            const methodId = methodSelect.value;
+            const methodData = paymentMethods[methodId];
 
-            if (!fund || !method) { alert("অনুগ্রহ করে তহবিল এবং মাধ্যম নির্বাচন করুন।"); return; }
+            if (!fund || !methodId) { alert("অনুগ্রহ করে তহবিল এবং মাধ্যম নির্বাচন করুন।"); return; }
 
             btn.innerText = "অপেক্ষা করুন...";
             btn.disabled = true;
 
             try {
                 await addDoc(collection(db, "donations"), {
-                    fundType: fund, method: method, amount: document.getElementById('amount').value,
+                    fundType: fund,
+                    methodId: methodId,
+                    methodCategory: methodData ? (methodData.category || 'mobile') : '',
+                    methodLabel: methodData ? (methodData.category === 'bank' ? methodData.bankName : methodData.title) : '',
+                    amount: document.getElementById('amount').value,
                     contact: document.getElementById('contactInfo').value, timestamp: new Date()
                 });
                 alert("ধন্যবাদ! আপনার তথ্য জমা হয়েছে।");
                 e.target.reset();
-                displayNumber.innerText = "মাধ্যম নির্বাচন করুন"; 
-                displayInstruction.classList.add('hidden');
+                updatePaymentDisplay(null);
             } catch (error) {
                 alert("সমস্যা হয়েছে। আবার চেষ্টা করুন।");
             } finally {
@@ -575,31 +635,30 @@
             }
         });
 
-        // --- PROGRAMS LOGIC ---
+        // --- PROGRAMS LOGIC (বিস্তারিত মোডাল ফিক্স করা হয়েছে) ---
         const programsContainer = document.getElementById('programs-container');
         const qPrograms = query(collection(db, "programs"), orderBy("timestamp", "desc"));
+        let programsData = {}; // doc.id => data (এখানেই টাইটেল/বর্ণনা রাখা হয়, onclick attribute-এ আর বসানো হয় না)
 
         onSnapshot(qPrograms, (snapshot) => {
+            programsData = {};
             if(!snapshot.empty) {
                 let contentHTML = "";
                 snapshot.forEach((docSnap) => {
                     const data = docSnap.data();
-                    const safeTitle = data.title.replace(/'/g, "\\'");
-                    const safeDesc = data.description.replace(/'/g, "\\'").replace(/\n/g, "\\n");
-                    const safeImg = data.imageUrl || "";
+                    programsData[docSnap.id] = data;
 
-                    // Cards size increased for better view
                     contentHTML += `
                         <div class="flex-shrink-0 w-80 md:w-96 bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 flex flex-col justify-between h-auto self-stretch hover:shadow-xl transition-shadow duration-300 snap-start">
                             <div class="w-full">
-                                ${data.imageUrl ? `<img src="${data.imageUrl}" loading="lazy" decoding="async" class="w-full h-48 md:h-56 object-cover cursor-pointer" onclick="openModal('${safeTitle}', '${safeDesc}', '${safeImg}')">` : '<div class="h-44 bg-gray-200 flex items-center justify-center text-gray-400"><i class="fas fa-image"></i></div>'}
+                                ${data.imageUrl ? `<img src="${data.imageUrl}" loading="lazy" decoding="async" class="w-full h-48 md:h-56 object-cover cursor-pointer" onclick="openProgramModal('${docSnap.id}')">` : '<div class="h-44 bg-gray-200 flex items-center justify-center text-gray-400"><i class="fas fa-image"></i></div>'}
                                 <div class="p-5 pb-0">
                                     <h3 class="text-xl font-bold text-gray-800 mb-2 leading-tight line-clamp-2">${data.title}</h3>
                                     <p class="text-gray-700 text-base mb-3 line-clamp-3">${data.description}</p>
                                 </div>
                             </div>
                             <div class="p-5 pt-0 mt-auto">
-                                <button onclick="openModal('${safeTitle}', '${safeDesc}', '${safeImg}')" 
+                                <button onclick="openProgramModal('${docSnap.id}')" 
                                     class="w-full border-2 border-green-600 text-green-600 hover:bg-green-600 hover:text-white text-base font-bold py-2 rounded-lg transition">
                                     বিস্তারিত
                                 </button>
@@ -714,11 +773,13 @@
 
 
         // --- GLOBAL FUNCTIONS ---
-        window.openModal = (title, desc, img) => {
-            document.getElementById('modalTitle').innerText = title;
-            document.getElementById('modalDesc').innerText = desc;
+        window.openProgramModal = (id) => {
+            const data = programsData[id];
+            if (!data) return;
+            document.getElementById('modalTitle').innerText = data.title || '';
+            document.getElementById('modalDesc').innerText = data.description || '';
             const imgEl = document.getElementById('modalImage');
-            if(img) { imgEl.src = img; imgEl.classList.remove('hidden'); } 
+            if(data.imageUrl) { imgEl.src = data.imageUrl; imgEl.classList.remove('hidden'); } 
             else { imgEl.classList.add('hidden'); }
             document.getElementById('detailsModal').classList.remove('hidden');
         }
@@ -750,4 +811,4 @@
         }
     </script>
 </body>
-                                                                                                          </html>
+                    </html>

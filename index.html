@@ -621,7 +621,7 @@
                     methodId: methodId,
                     methodCategory: methodData ? (methodData.category || 'mobile') : '',
                     methodLabel: methodData ? (methodData.category === 'bank' ? methodData.bankName : methodData.title) : '',
-                    amount: document.getElementById('amount').value,
+                    amount: Number(document.getElementById('amount').value),
                     contact: document.getElementById('contactInfo').value, timestamp: new Date()
                 });
                 alert("ধন্যবাদ! আপনার তথ্য জমা হয়েছে।");
